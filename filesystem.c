@@ -194,7 +194,10 @@ int fs_read(lua_State *L)
 
    FILE *fp = fopen(fullpath, "rb");
    if (!fp)
-      return 0;
+   {
+      lua_pushnil(L);
+      return 1;
+   }
 
    fseek(fp, 0, SEEK_END);
    long fsize = ftell(fp);
