@@ -221,7 +221,7 @@ bool path_is_compressed_file(const char* path)
  * E.g.: in_path = "/foo/bar/baz/boo.c", replace = ""     =>
  * out_path = "/foo/bar/baz/boo"
  */
-void fill_pathname(char *out_path, const char *in_path,
+size_t fill_pathname(char *out_path, const char *in_path,
       const char *replace, size_t size)
 {
    char tmp_path[PATH_MAX_LENGTH];
@@ -233,7 +233,7 @@ void fill_pathname(char *out_path, const char *in_path,
    if ((tok = (char*)strrchr(path_basename(tmp_path), '.')))
       *tok = '\0';
 
-   fill_pathname_noext(out_path, tmp_path, replace, size);
+   return fill_pathname_noext(out_path, tmp_path, replace, size);
 }
 
 /**
@@ -277,15 +277,14 @@ char *find_last_slash(const char *str)
  * Assumes path is a directory. Appends a slash
  * if not already there.
  **/
-void fill_pathname_slash(char *path, size_t size)
+size_t fill_pathname_slash(char *path, size_t size)
 {
    size_t path_len;
    const char *last_slash = find_last_slash(path);
 
    if (!last_slash)
    {
-      strlcat(path, PATH_DEFAULT_SLASH(), size);
-      return;
+      return strlcat(path, PATH_DEFAULT_SLASH(), size);
    }
 
    path_len               = strlen(path);
@@ -294,7 +293,9 @@ void fill_pathname_slash(char *path, size_t size)
    {
       path[path_len]   = last_slash[0];
       path[path_len+1] = '\0';
+      ++path_len;
    }
+   return path_len;
 }
 
 /**
@@ -509,12 +510,12 @@ void fill_str_dated_filename(char *out_filename,
  * Extracts base directory by mutating path.
  * Keeps trailing '/'.
  **/
-void path_basedir(char *path)
+size_t path_basedir(char *path)
 {
    char *last = NULL;
 
    if (strlen(path) < 2)
-      return;
+      return strlen(path);
 
    last = find_last_slash(path);
 
@@ -522,6 +523,7 @@ void path_basedir(char *path)
       last[1] = '\0';
    else
       strlcpy(path, "." PATH_DEFAULT_SLASH(), 3);
+   return strlen(path);
 }
 
 /**

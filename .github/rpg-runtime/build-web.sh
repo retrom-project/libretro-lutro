@@ -29,6 +29,11 @@ if ! docker run --rm --platform linux/amd64 --hostname retrom-lutro \
   exit 1
 fi
 
+if grep -E 'wasm-ld: warning: function signature mismatch:' "$work/build.log" >&2; then
+  echo 'Lutro and RetroArch have incompatible function signatures' >&2
+  exit 1
+fi
+
 test "$source_digest" = "$(python3 "$root/.github/rpg-runtime/candidate_descriptor.py" digest "$output")"
 stage="$work/stage"
 mkdir -p "$stage"

@@ -134,7 +134,7 @@ const char *path_basename_nocompression(const char *path);
  * Extracts base directory by mutating path.
  * Keeps trailing '/'.
  **/
-void path_basedir(char *path);
+size_t path_basedir(char *path);
 
 /**
  * path_parent_dir:
@@ -212,7 +212,7 @@ bool path_is_absolute(const char *path);
  * E.g.: in_path = "/foo/bar/baz/boo.c", replace = ""     =>
  * out_path = "/foo/bar/baz/boo"
  */
-void fill_pathname(char *out_path, const char *in_path,
+size_t fill_pathname(char *out_path, const char *in_path,
       const char *replace, size_t size);
 
 /**
@@ -495,7 +495,7 @@ void path_basedir_wrapper(char *path);
  * Assumes path is a directory. Appends a slash
  * if not already there.
  **/
-void fill_pathname_slash(char *path, size_t size);
+size_t fill_pathname_slash(char *path, size_t size);
 
 #if !defined(RARCH_CONSOLE) && defined(RARCH_INTERNAL)
 void fill_pathname_application_path(char *buf, size_t size);
