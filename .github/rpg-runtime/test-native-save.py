@@ -11,17 +11,14 @@ from pathlib import Path
 def run_core(core: Path, game: Path, saves: Path):
     library = ctypes.CDLL(str(core))
     environment_type = ctypes.CFUNCTYPE(ctypes.c_bool, ctypes.c_uint, ctypes.c_void_p)
-    clock_type = ctypes.CFUNCTYPE(ctypes.c_longlong)
-    clock = clock_type(lambda: 1000000)
     save_path = ctypes.c_char_p(str(saves).encode())
 
     def environment(command, pointer):
         if command == 31:  # RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY
             ctypes.cast(pointer, ctypes.POINTER(ctypes.c_char_p))[0] = save_path
             return True
-        if command == 28:  # RETRO_ENVIRONMENT_GET_PERF_INTERFACE
-            ctypes.cast(pointer, ctypes.POINTER(ctypes.c_void_p))[0] = ctypes.cast(clock, ctypes.c_void_p).value
-            return True
+        if command == 28:  # RETRO_ENVIRONMENT_GET_PERF_INTERFACE: browser frontend omits this
+            return False
         return command == 10  # RETRO_ENVIRONMENT_SET_PIXEL_FORMAT
 
     callback = environment_type(environment)

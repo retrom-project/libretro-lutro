@@ -10,6 +10,7 @@
 
 #include <libretro.h>
 #include <streams/file_stream.h>
+#include <features/features_cpu.h>
 
 #include "libretro_core_options.h"
 #include "joystick.h"
@@ -67,11 +68,12 @@ void retro_init(void)
    else
       log_cb = fallback_log;
 
-   // Always get the perf interface because we need it for the timers
-   if (!environ_cb( RETRO_ENVIRONMENT_GET_PERF_INTERFACE, &perf_cb))
+   // Minimal browser libretro frontends may omit the performance interface.
+   // The bundled libretro-common clock also uses Emscripten's monotonic timer.
+   if (!environ_cb(RETRO_ENVIRONMENT_GET_PERF_INTERFACE, &perf_cb) || !perf_cb.get_time_usec)
    {
-      perf_cb.get_time_usec = NULL;
-      log_cb(RETRO_LOG_WARN, "Could not get the perf interface\n");
+      perf_cb.get_time_usec = cpu_features_get_time_usec;
+      log_cb(RETRO_LOG_WARN, "Using the libretro-common clock\n");
    }
 }
 
@@ -231,12 +233,6 @@ bool retro_load_game(const struct retro_game_info *info)
 
    struct retro_frame_time_callback frame_cb = { frame_time_cb, 1000000 / 60 };
    environ_cb(RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK, &frame_cb);
-
-   if (!perf_cb.get_time_usec)
-   {
-      log_cb(RETRO_LOG_ERROR, "Core needs the perf interface\n");
-      return false;
-   }
 
    int success = lutro_load(info->path);
 
