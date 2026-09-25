@@ -205,7 +205,6 @@ VORBIS_SOURCES_C := \
     $(CORE_DIR)/deps/ogg/bitwise.c \
     $(CORE_DIR)/deps/ogg/framing.c \
     $(CORE_DIR)/deps/vorbis/analysis.c \
-    $(CORE_DIR)/deps/vorbis/barkmel.c \
     $(CORE_DIR)/deps/vorbis/bitrate.c \
     $(CORE_DIR)/deps/vorbis/block.c \
     $(CORE_DIR)/deps/vorbis/codebook.c \
