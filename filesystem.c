@@ -22,6 +22,47 @@
 #include <stdlib.h>
 #include <string.h>
 
+// Game resources remain in gamedir; only writes use the persistent save root.
+// Reject paths that could escape either root when games request filesystem I/O.
+static bool fs_resolve(char *dest, size_t capacity, const char *root, const char *path)
+{
+   const char *segment = path;
+   if (!root[0] || !path[0] || path[0] == '/' || path[0] == '\\')
+      return false;
+   for (const char *cursor = path; ; ++cursor)
+   {
+      if (*cursor == '\\')
+         return false;
+      if (*cursor == '/' || *cursor == '\0')
+      {
+         const size_t length = (size_t)(cursor - segment);
+         if (!length || (length == 1 && segment[0] == '.') ||
+             (length == 2 && segment[0] == '.' && segment[1] == '.'))
+            return false;
+         if (*cursor == '\0')
+            break;
+         segment = cursor + 1;
+      }
+   }
+   const size_t root_length = strlen(root);
+   const size_t path_length = strlen(path);
+   if (root_length + path_length >= capacity)
+      return false;
+   memcpy(dest, root, root_length);
+   memcpy(dest + root_length, path, path_length + 1);
+   return true;
+}
+
+static bool fs_saved_path(char *dest, const char *path)
+{
+   return fs_resolve(dest, PATH_MAX_LENGTH, settings.savedir, path);
+}
+
+static bool fs_game_path(char *dest, const char *path)
+{
+   return fs_resolve(dest, PATH_MAX_LENGTH, settings.gamedir, path);
+}
+
 int _raw_get_user_writable_dir(lua_State *L)
 {
    char* savedir;
@@ -142,12 +183,18 @@ int fs_read(lua_State *L)
    const char *path = luaL_checkstring(L, 1);
 
    char fullpath[PATH_MAX_LENGTH];
-   strlcpy(fullpath, settings.gamedir, sizeof(fullpath));
-   strlcat(fullpath, path, sizeof(fullpath));
+   if (!fs_game_path(fullpath, path))
+      return luaL_error(L, "Invalid filesystem path");
+   if (settings.savedir[0])
+   {
+      char saved[PATH_MAX_LENGTH];
+      if (fs_saved_path(saved, path) && filestream_exists(saved))
+         strlcpy(fullpath, saved, sizeof(fullpath));
+   }
 
-   FILE *fp = fopen(fullpath, "r");
+   FILE *fp = fopen(fullpath, "rb");
    if (!fp)
-      return -1;
+      return 0;
 
    fseek(fp, 0, SEEK_END);
    long fsize = ftell(fp);
@@ -159,7 +206,7 @@ int fs_read(lua_State *L)
 
    string[bytes_read] = 0;
 
-   lua_pushstring(L, string);
+   lua_pushlstring(L, string, bytes_read);
    lua_pushnumber(L, bytes_read);
 
    lutro_free(string);
@@ -170,21 +217,25 @@ int fs_read(lua_State *L)
 int fs_write(lua_State *L)
 {
    const char *path = luaL_checkstring(L, 1);
-   const char *data = luaL_checkstring(L, 2);
+   size_t length = 0;
+   const char *data = luaL_checklstring(L, 2, &length);
 
    char fullpath[PATH_MAX_LENGTH];
-   strlcpy(fullpath, settings.gamedir, sizeof(fullpath));
-   strlcat(fullpath, path, sizeof(fullpath));
+   if (!(settings.savedir[0] ? fs_saved_path(fullpath, path) : fs_game_path(fullpath, path)))
+      return luaL_error(L, "Invalid filesystem path");
 
-   FILE *fp = fopen(fullpath, "w");
+   FILE *fp = fopen(fullpath, "wb");
    if (!fp)
-      return -1;
+   {
+      lua_pushboolean(L, 0);
+      return 1;
+   }
 
-   fprintf(fp, "%s", data);
+   const bool complete = fwrite(data, 1, length, fp) == length;
+   const bool closed = fclose(fp) == 0;
+   const bool written = complete && closed;
 
-   fclose(fp);
-
-   lua_pushboolean(L, 1);
+   lua_pushboolean(L, written);
    return 1;
 }
 
@@ -264,10 +315,9 @@ int fs_exists(lua_State *L)
    const char *path = luaL_checkstring(L, 1);
 
    char fullpath[PATH_MAX_LENGTH];
-   strlcpy(fullpath, settings.gamedir, sizeof(fullpath));
-   strlcat(fullpath, path, sizeof(fullpath));
-
-   bool exists = filestream_exists(fullpath);
+   bool exists = fs_saved_path(fullpath, path) && filestream_exists(fullpath);
+   if (!exists)
+      exists = fs_game_path(fullpath, path) && filestream_exists(fullpath);
 
    lua_pushboolean(L, exists);
    return 1;
@@ -325,10 +375,9 @@ int fs_isDirectory(lua_State *L)
    const char *path = luaL_checkstring(L, 1);
 
    char fullpath[PATH_MAX_LENGTH];
-   strlcpy(fullpath, settings.gamedir, sizeof(fullpath));
-   strlcat(fullpath, path, sizeof(fullpath));
-
-   bool res = path_is_directory(fullpath);
+   bool res = fs_saved_path(fullpath, path) && path_is_directory(fullpath);
+   if (!res)
+      res = fs_game_path(fullpath, path) && path_is_directory(fullpath);
 
    lua_pushboolean(L, res);
    return 1;
@@ -340,10 +389,10 @@ int fs_isFile(lua_State *L)
    bool res         = false;
    const char *path = luaL_checkstring(L, 1);
 
-   strlcpy(fullpath, settings.gamedir, sizeof(fullpath));
-   strlcat(fullpath, path, sizeof(fullpath));
-
-   res = filestream_exists(fullpath) && !path_is_directory(fullpath);
+   if (fs_saved_path(fullpath, path))
+      res = filestream_exists(fullpath) && !path_is_directory(fullpath);
+   if (!res && fs_game_path(fullpath, path))
+      res = filestream_exists(fullpath) && !path_is_directory(fullpath);
 
    lua_pushboolean(L, res);
    return 1;
@@ -354,8 +403,8 @@ int fs_createDirectory(lua_State *L)
    bool res;
    char fullpath[PATH_MAX_LENGTH];
    const char *path = luaL_checkstring(L, 1);
-   strlcpy(fullpath, settings.gamedir, sizeof(fullpath));
-   strlcat(fullpath, path, sizeof(fullpath));
+   if (!(settings.savedir[0] ? fs_saved_path(fullpath, path) : fs_game_path(fullpath, path)))
+      return luaL_error(L, "Invalid filesystem path");
 
    res = path_mkdir(fullpath);
 
@@ -371,46 +420,46 @@ int fs_getDirectoryItems(lua_State *L)
       return luaL_error(L, "lutro.filesystem.getDirectoryItems requires 1 argument, %d given.", n);
    }
 
-   // Get the full resolved path to the desired directory.
    const char *path = luaL_checkstring(L, 1);
-   char fullpath[PATH_MAX_LENGTH];
-   strlcpy(fullpath, settings.gamedir, sizeof(fullpath));
-   strlcat(fullpath, path, sizeof(fullpath));
-
-   // Make sure it's a directory.
-   if (!path_is_directory(fullpath)) {
-      return luaL_error(L, "The given directory of '%s' is not a directory.", path);
-   }
-
-   // Open up the directory.
-   libretro_vfs_implementation_dir* dir = retro_vfs_opendir_impl(fullpath, true);
-   if (!dir) {
-      retro_vfs_closedir_impl(dir);
-      return luaL_error(L, "Failed to open the '%s' directory.", path);
-   }
-
-   // Prepare the output table.
+   const char *roots[2] = { settings.savedir, settings.gamedir };
    lua_newtable(L);
+   lua_newtable(L); // names already emitted, so save files shadow resources
    int index = 1;
-
-   // Iterate through each directory entry, ignoring the current and previous directories.
-   while (retro_vfs_readdir_impl(dir)) {
-      const char * currentDir = retro_vfs_dirent_get_name_impl(dir);
-      if (currentDir == NULL) {
-         break;
-      }
-      if (string_is_equal(currentDir, ".") || string_is_equal(currentDir, "..")) {
+   bool found = false;
+   for (unsigned i = 0; i < 2; ++i)
+   {
+      if (!roots[i][0])
          continue;
+      char fullpath[PATH_MAX_LENGTH];
+      if (!*path)
+         strlcpy(fullpath, roots[i], sizeof(fullpath));
+      else if (!fs_resolve(fullpath, sizeof(fullpath), roots[i], path))
+         return luaL_error(L, "Invalid filesystem path");
+      if (!path_is_directory(fullpath))
+         continue;
+      found = true;
+      libretro_vfs_implementation_dir *dir = retro_vfs_opendir_impl(fullpath, true);
+      if (!dir)
+         return luaL_error(L, "Failed to open the '%s' directory.", path);
+      while (retro_vfs_readdir_impl(dir))
+      {
+         const char *name = retro_vfs_dirent_get_name_impl(dir);
+         if (!name || string_is_equal(name, ".") || string_is_equal(name, ".."))
+            continue;
+         lua_getfield(L, -1, name);
+         bool emitted = lua_toboolean(L, -1);
+         lua_pop(L, 1);
+         if (emitted)
+            continue;
+         lua_pushboolean(L, 1);
+         lua_setfield(L, -2, name);
+         lua_pushstring(L, name);
+         lua_rawseti(L, -3, index++);
       }
-
-      // Add the entry to the table.
-      lua_pushnumber(L, index++);
-      lua_pushstring(L, currentDir);
-      lua_settable(L, -3);
+      retro_vfs_closedir_impl(dir);
    }
-
-   // Finally, close the opened directory, and return the table.
-   retro_vfs_closedir_impl(dir);
-
+   if (!found)
+      return luaL_error(L, "The given directory of '%s' is not a directory.", path);
+   lua_pop(L, 1); // seen names
    return 1;
 }

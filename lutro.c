@@ -591,6 +591,27 @@ int lutro_load(const char *path)
 
    fill_pathname_slash(gamedir, sizeof(gamedir));
 
+   // Keep native game saves outside the temporary extracted archive. The
+   // latter is removed on unload, and must remain an immutable resource root.
+   settings.savedir[0] = '\0';
+   {
+      const char *savedir = NULL;
+      if ((*settings.environ_cb)(RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &savedir) && savedir && *savedir)
+      {
+         char gamename[PATH_MAX_LENGTH];
+         char savebase[PATH_MAX_LENGTH];
+         fill_pathname_base(gamename, path, sizeof(gamename));
+         path_remove_extension(gamename);
+         fill_pathname_join(savebase, savedir, "lutro-native", sizeof(savebase));
+         path_mkdir(savebase);
+         fill_pathname_join(settings.savedir, savebase, gamename, sizeof(settings.savedir));
+         path_mkdir(settings.savedir);
+         fill_pathname_slash(settings.savedir, sizeof(settings.savedir));
+      }
+   }
+
+   strlcpy(settings.gamedir, gamedir, PATH_MAX_LENGTH);
+
    char package_path[PATH_MAX_LENGTH];
    snprintf(package_path, PATH_MAX_LENGTH, ";%s?.lua;%s?.luac;%s?/init.lua", gamedir, gamedir, gamedir);
    lutro_set_package_path(L, package_path);
@@ -610,8 +631,6 @@ int lutro_load(const char *path)
    int oldtop = lua_gettop(L);
    luax_reqglobal(L, "lutro");
    int tbl_top_lutro = lua_gettop(L);
-
-   strlcpy(settings.gamedir, gamedir, PATH_MAX_LENGTH);
 
    lua_getfield(L, tbl_top_lutro, "conf");
 

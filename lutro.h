@@ -26,6 +26,7 @@ typedef struct lutro_settings_t {
    int live_enable;
    int live_call_load;
    char gamedir[PATH_MAX_LENGTH];
+   char savedir[PATH_MAX_LENGTH];
    char identity[PATH_MAX_LENGTH];
    double delta;
    double deltaCounter;

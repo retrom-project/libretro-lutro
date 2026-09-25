@@ -36,7 +36,7 @@ install -m 0644 "$work/raw/lutro_libretro.js" "$stage/"
 install -m 0644 "$work/raw/lutro_libretro.wasm" "$stage/"
 cat "$root/LICENSE" "$work/raw/retroarch-COPYING" > "$stage/license.txt"
 printf '%s\n' '{"minimumEJSVersion":"4.2.2","version":"1.18"}' > "$stage/build.json"
-printf '%s\n' '{"name":"lutro","extensions":["lutro"],"makeoptions":{"buildpath":"./","makescript":"Makefile","arguments":[]},"options":{},"save":true,"license":"LICENSE","repo":"https://github.com/retrom-project/libretro-lutro"}' > "$stage/core.json"
+printf '%s\n' '{"name":"lutro","extensions":["lutro"],"makeoptions":{"buildpath":"./","makescript":"Makefile","arguments":[]},"options":{},"save":false,"license":"LICENSE","repo":"https://github.com/retrom-project/libretro-lutro"}' > "$stage/core.json"
 chmod 0644 "$stage/build.json" "$stage/core.json" "$stage/license.txt"
 
 (cd "$stage" && 7z a -mtm=off -mta=off -mtc=off -bd -bso0 -bsp0 -t7z "$output/lutro-wasm.data" \
