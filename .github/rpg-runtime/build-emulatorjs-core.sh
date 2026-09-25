@@ -35,5 +35,12 @@ emmake make -C /work/retroarch -f Makefile.emulatorjs \
   STACK_SIZE=4194304 INITIAL_HEAP=134217728 \
   TARGET="${core_name}_libretro.js" -j"4"
 
+# Emscripten's metadata pass marks RetroArch's main as not reading argv for
+# this static Lutro link, although the exported main still accepts argc/argv.
+# EmulatorJS starts the game with Module.callMain([contentPath]); restore the
+# argument marshaling that Emscripten emits for the other browser cores.
+python3 /recipe/restore-main-arguments.py \
+  "/work/retroarch/${core_name}_libretro.js"
+
 install -m 0644 "/work/retroarch/${core_name}_libretro.js" /output/
 install -m 0644 "/work/retroarch/${core_name}_libretro.wasm" /output/
