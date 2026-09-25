@@ -8,7 +8,7 @@ import zipfile
 from pathlib import Path
 
 
-def run_core(core: Path, game: Path, saves: Path):
+def run_core(core: Path, game: Path, saves: Path, expected: bool = True):
     library = ctypes.CDLL(str(core))
     environment_type = ctypes.CFUNCTYPE(ctypes.c_bool, ctypes.c_uint, ctypes.c_void_p)
     save_path = ctypes.c_char_p(str(saves).encode())
@@ -33,16 +33,18 @@ def run_core(core: Path, game: Path, saves: Path):
     library.retro_load_game.argtypes = [ctypes.POINTER(GameInfo)]
     library.retro_load_game.restype = ctypes.c_bool
     info = GameInfo(str(game).encode(), None, 0, None)
-    if not library.retro_load_game(ctypes.byref(info)):
-        raise RuntimeError("Lutro failed to load its own save fixture")
-    library.retro_unload_game()
+    loaded = library.retro_load_game(ctypes.byref(info))
+    if loaded != expected:
+        raise RuntimeError("Unexpected Lutro archive load result")
+    if loaded:
+        library.retro_unload_game()
     library.retro_deinit()
 
 
 def main():
     core = Path(__file__).resolve().parents[2] / "lutro_libretro.so"
-    if len(sys.argv) == 4 and sys.argv[1] == "--child":
-        run_core(core, Path(sys.argv[2]), Path(sys.argv[3]))
+    if len(sys.argv) == 4 and sys.argv[1] in ("--child", "--reject"):
+        run_core(core, Path(sys.argv[2]), Path(sys.argv[3]), sys.argv[1] == "--child")
         return
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
@@ -76,6 +78,13 @@ end
         assert (native / "status").read_bytes() == bytes([0, 255, 65])
         assert (native / "resume-proof").read_bytes() == bytes([0, 255, 65])
         assert not (saves / "lutro" / "SaveFixture").exists(), "temporary extraction survived unload"
+        malicious = root / "EscapeFixture.lutro"
+        with zipfile.ZipFile(malicious, "w") as archive:
+            archive.writestr("main.lua", script)
+            archive.writestr("../escape-proof", b"must stay in archive")
+        subprocess.run([sys.executable, __file__, "--reject", str(malicious), str(saves)], check=True)
+        assert not (saves / "lutro" / "escape-proof").exists()
+        assert not (saves / "lutro" / "EscapeFixture").exists()
 
 
 if __name__ == "__main__":
