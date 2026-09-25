@@ -555,7 +555,10 @@ int lutro_load(const char *path)
    strlcpy(gamedir, path, PATH_MAX_LENGTH);
 
    if (!path_is_directory(mainfile)) {
-      path_basedir(gamedir);
+      // The bundled libretro-common declares path_basedir() as void, while
+      // current RetroArch exports size_t path_basedir(). The wrapper has the
+      // same signature and base-directory behavior in both versions.
+      path_basedir_wrapper(gamedir);
    }
 
    // Loading a .lutro file.
